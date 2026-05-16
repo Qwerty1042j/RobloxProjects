@@ -1,0 +1,30 @@
+{
+  "name": "Website",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Modules": {
+        "$path": "src/ReplicatedStorage"
+      }
+    },
+
+    "ServerScriptService": {
+      "ServerScripts": {
+        "$path": "src/ServerScriptService"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts":{
+        "LocalScripts": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts"
+        }
+      },
+      "StarterCharacterScripts":{
+        "$path": "src/StarterPlayer/StarterCharacterScripts"
+      }
+    }
+
+  }
+}
