@@ -11,15 +11,19 @@
 
     "ServerScriptService": {
       "ServerScripts": {
-        "$path": "src/ServerScriptService"
+        "$path": "src/ServerScriptService/ServerScripts"
+      },
+      "Data": {
+        "$path": "src/ServerScriptService/Data"
+      },
+      "Libraries": {
+        "$path": "src/ServerScriptService/Libraries"
       }
     },
 
     "StarterPlayer": {
       "StarterPlayerScripts":{
-        "LocalScripts": {
-          "$path": "src/StarterPlayer/StarterPlayerScripts"
-        }
+        "$path": "src/StarterPlayer/StarterPlayerScripts"
       },
       "StarterCharacterScripts":{
         "$path": "src/StarterPlayer/StarterCharacterScripts"

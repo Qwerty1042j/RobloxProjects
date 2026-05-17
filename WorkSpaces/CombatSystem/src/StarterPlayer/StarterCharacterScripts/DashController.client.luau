@@ -1,12 +1,13 @@
-local Players = game:GetService("Players")
-local UIS     = game:GetService("UserInputService")
+local Players    = game:GetService("Players")
+local UIS        = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
-local DashModule = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("DashModule"))
+local _DashModule = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitForChild("DashModule"))
 
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid  = character:WaitForChild("Humanoid")
-local humanoidRootPart  = character:WaitForChild("HumanoidRootPart")
+local rootPart  = character:WaitForChild("HumanoidRootPart")
 local camera    = workspace.CurrentCamera
 
 local animator = humanoid:WaitForChild("Animator")
@@ -15,9 +16,9 @@ local dashAnim = animator:LoadAnimation(dashAnimation)
 
 -- ── Config ───────────────────────────────────────────────────────────
 local DASH_KEY      = Enum.KeyCode.Q
-local DASH_FORCE    = 80
-local DASH_DURATION = 0.25
-local DASH_COOLDOWN = 1.0
+local DASH_FORCE    = 60
+local DASH_DURATION = 0.35   -- how long the dash lasts after pressing Q
+local DASH_COOLDOWN = 1.5
 -- ─────────────────────────────────────────────────────────────────────
 
 local canDash = true
@@ -26,85 +27,83 @@ local function isGrounded()
     return humanoid.FloorMaterial ~= Enum.Material.Air
 end
 
--- Ground dash: flat WASD relative to camera yaw only
-local function getGroundDirection()
-    local forward = UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0
-    local back    = UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0
-    local left    = UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0
-    local right   = UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0
-
-    local inputVec = Vector3.new(right - left, 0, back - forward)
-    if inputVec.Magnitude < 0.1 then
-        inputVec = Vector3.new(0, 0, -1)  -- default: forward
-    end
-
-    -- Strip camera pitch — yaw only
-    local camYaw = CFrame.new(Vector3.zero, Vector3.new(
-        camera.CFrame.LookVector.X,
-        0,
-        camera.CFrame.LookVector.Z
-    ))
-
-    return (camYaw:VectorToWorldSpace(inputVec)).Unit
-end
-
--- Aerial dash: full 3D WASD relative to camera including pitch
--- W  → along camera LookVector  (up if cam tilted up)
--- S  → opposite of LookVector   (down if cam tilted up)
--- A  → camera left              (always flat)
--- D  → camera right             (always flat)
--- Diagonals combine all three axes and are normalized
-local function getAerialDirection()
+local function getDashDirection()
     local camCF = camera.CFrame
 
-    -- Camera axes in world space
-    local look  =  camCF.LookVector          -- W direction
-    local right =  camCF.RightVector         -- D direction
-    -- Up/Down is not a separate key here; pitch is baked into look/back
+    local forward  = UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0
+    local back     = UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0
+    local leftKey  = UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0
+    local rightKey = UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0
 
-    local forward = UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0
-    local back    = UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0
-    local leftKey = UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0
-    local rightKey= UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0
-
-    local dir = (look * (forward - back))
-              + (right * (rightKey - leftKey))
-
-    if dir.Magnitude < 0.1 then
-        dir = look  -- default: straight along camera
+    if isGrounded() then
+        local camYaw = CFrame.new(Vector3.zero, Vector3.new(
+            camCF.LookVector.X, 0, camCF.LookVector.Z
+        ))
+        local inputVec = Vector3.new(rightKey - leftKey, 0, back - forward)
+        if inputVec.Magnitude < 0.1 then inputVec = Vector3.new(0, 0, -1) end
+        return (camYaw:VectorToWorldSpace(inputVec)).Unit
+    else
+        local dir = (camCF.LookVector  * (forward - back))
+                  + (camCF.RightVector * (rightKey - leftKey))
+        if dir.Magnitude < 0.1 then dir = camCF.LookVector end
+        return dir.Unit
     end
-
-    return dir.Unit
 end
 
-local function onDash()
+local function startDash()
     if not canDash then return end
     if humanoid.Health <= 0 then return end
 
+    rootPart:SetAttribute("CanAttack", false)
+    task.delay(DASH_DURATION, function()
+        rootPart:SetAttribute("CanAttack", true)
+    end)
+    
+    dashAnim:Play()
     canDash = false
 
-    local dir
-    if isGrounded() then
-        dir = getGroundDirection()
-    else
-        dir = getAerialDirection()
-    end
+    -- Create the constraint once
+    local attachment = Instance.new("Attachment")
+    attachment.Parent = rootPart
 
-    DashModule.Dash(humanoidRootPart, humanoid, dir, DASH_FORCE, DASH_DURATION)
-    dashAnim:Play()
+    local lv = Instance.new("LinearVelocity")
+    lv.Attachment0            = attachment
+    lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+    lv.MaxForce               = 1e5
+    lv.RelativeTo             = Enum.ActuatorRelativeTo.World
+    lv.VectorVelocity         = getDashDirection() * DASH_FORCE
+    lv.Parent                 = rootPart
 
-    task.delay(DASH_COOLDOWN, function()
-        canDash = true
+    local elapsed = 0
+
+    -- Steer the dash every frame for DASH_DURATION seconds
+    local conn
+    conn = RunService.RenderStepped:Connect(function(dt)
+        elapsed += dt
+
+        if elapsed >= DASH_DURATION or humanoid.Health <= 0 then
+            conn:Disconnect()
+
+            -- Smooth stop
+            lv.VectorVelocity = Vector3.zero
+            task.wait()
+            lv:Destroy()
+            attachment:Destroy()
+
+            task.delay(DASH_COOLDOWN, function()
+                canDash = true
+            end)
+            return
+        end
+
+        -- Update direction live every frame
+        lv.VectorVelocity = getDashDirection() * DASH_FORCE
     end)
 end
 
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-
-    local canAttack = humanoidRootPart:GetAttribute("CanAttack")
-    if not canAttack then return end
-
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
     if input.KeyCode == DASH_KEY then
-        onDash()
+        startDash()
     end
 end)
