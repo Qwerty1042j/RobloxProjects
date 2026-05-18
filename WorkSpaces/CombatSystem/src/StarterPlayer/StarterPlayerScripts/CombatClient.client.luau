@@ -104,8 +104,10 @@ UIS.InputEnded:Connect(function(input, gp)
 
         task.spawn(function()
             coolDown = true
+            humanoidRootPart:SetAttribute("CanDash", false)
             task.wait(0.53)
             coolDown = false
+            humanoidRootPart:SetAttribute("CanDash", true)
         end)
     end
 end)

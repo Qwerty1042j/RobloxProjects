@@ -7,19 +7,19 @@ local _DashModule = require(game.ReplicatedStorage:WaitForChild("Modules"):WaitF
 local player    = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid  = character:WaitForChild("Humanoid")
-local rootPart  = character:WaitForChild("HumanoidRootPart")
+local humanoidRootPart  = character:WaitForChild("HumanoidRootPart")
 local camera    = workspace.CurrentCamera
 
-local animator = humanoid:WaitForChild("Animator")
+local animator      = humanoid:WaitForChild("Animator")
 local dashAnimation = game.ReplicatedStorage:WaitForChild("Animations"):WaitForChild("DashForward")
-local dashAnim = animator:LoadAnimation(dashAnimation)
+local dashAnim      = animator:LoadAnimation(dashAnimation)
 
--- ── Config ───────────────────────────────────────────────────────────
+-- Config
 local DASH_KEY      = Enum.KeyCode.Q
 local DASH_FORCE    = 60
-local DASH_DURATION = 0.35   -- how long the dash lasts after pressing Q
+local DASH_DURATION = 0.35
 local DASH_COOLDOWN = 1.5
--- ─────────────────────────────────────────────────────────────────────
+local STOP_DURATION = 0.25
 
 local canDash = true
 
@@ -27,56 +27,67 @@ local function isGrounded()
     return humanoid.FloorMaterial ~= Enum.Material.Air
 end
 
-local function getDashDirection()
+local function getCameraYaw()
     local camCF = camera.CFrame
+    return CFrame.new(Vector3.zero, Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z))
+end
 
-    local forward  = UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0
-    local back     = UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0
-    local leftKey  = UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0
-    local rightKey = UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0
-
+local function getCurrentDirection(inputVec)
+    local camCF = camera.CFrame
     if isGrounded() then
-        local camYaw = CFrame.new(Vector3.zero, Vector3.new(
-            camCF.LookVector.X, 0, camCF.LookVector.Z
-        ))
-        local inputVec = Vector3.new(rightKey - leftKey, 0, back - forward)
-        if inputVec.Magnitude < 0.1 then inputVec = Vector3.new(0, 0, -1) end
-        return (camYaw:VectorToWorldSpace(inputVec)).Unit
+        return getCameraYaw():VectorToWorldSpace(inputVec).Unit
     else
-        local dir = (camCF.LookVector  * (forward - back))
-                  + (camCF.RightVector * (rightKey - leftKey))
+        local fwd   = -inputVec.Z
+        local right =  inputVec.X
+        local dir = (camCF.LookVector * fwd) + (camCF.RightVector * right)
         if dir.Magnitude < 0.1 then dir = camCF.LookVector end
         return dir.Unit
     end
 end
 
 local function startDash()
+    local CanDash = humanoidRootPart:GetAttribute("CanDash")
+    if CanDash == false then return end
     if not canDash then return end
     if humanoid.Health <= 0 then return end
 
-    rootPart:SetAttribute("CanAttack", false)
+    local fwd = UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0
+    local bk  = UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0
+    local lk  = UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0
+    local rk  = UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0
+
+    local inputVec = Vector3.new(rk - lk, 0, bk - fwd)
+    if inputVec.Magnitude < 0.1 then
+        inputVec = Vector3.new(0, 0, -1)
+    else
+        inputVec = inputVec.Unit
+    end
+
+    local function getCurrentDir()
+        return getCurrentDirection(inputVec)
+    end
+
+    humanoidRootPart:SetAttribute("CanAttack", false)
     task.delay(DASH_DURATION, function()
-        rootPart:SetAttribute("CanAttack", true)
+        humanoidRootPart:SetAttribute("CanAttack", true)
     end)
-    
+
     dashAnim:Play()
     canDash = false
+    humanoid.JumpHeight = 0
 
-    -- Create the constraint once
     local attachment = Instance.new("Attachment")
-    attachment.Parent = rootPart
+    attachment.Parent = humanoidRootPart
 
     local lv = Instance.new("LinearVelocity")
     lv.Attachment0            = attachment
     lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
     lv.MaxForce               = 1e5
     lv.RelativeTo             = Enum.ActuatorRelativeTo.World
-    lv.VectorVelocity         = getDashDirection() * DASH_FORCE
-    lv.Parent                 = rootPart
+    lv.Parent                 = humanoidRootPart
 
     local elapsed = 0
 
-    -- Steer the dash every frame for DASH_DURATION seconds
     local conn
     conn = RunService.RenderStepped:Connect(function(dt)
         elapsed += dt
@@ -84,11 +95,30 @@ local function startDash()
         if elapsed >= DASH_DURATION or humanoid.Health <= 0 then
             conn:Disconnect()
 
-            -- Smooth stop
-            lv.VectorVelocity = Vector3.zero
-            task.wait()
+            local stopStartVelocity = getCurrentDir() * DASH_FORCE
             lv:Destroy()
             attachment:Destroy()
+
+            local stopElapsed = 0
+            local stopConn
+            stopConn = RunService.RenderStepped:Connect(function(dt2)
+                stopElapsed += dt2
+                local alpha = math.min(stopElapsed / STOP_DURATION, 1)
+
+                local currentVel = stopStartVelocity * (1 - alpha)
+
+                -- for air dash preserve Y separately, for ground keep Y from gravity
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(
+                    currentVel.X,
+                    humanoidRootPart.AssemblyLinearVelocity.Y,
+                    currentVel.Z
+                )
+
+                if alpha >= 1 then
+                    stopConn:Disconnect()
+                    humanoid.JumpHeight = 5
+                end
+            end)
 
             task.delay(DASH_COOLDOWN, function()
                 canDash = true
@@ -96,8 +126,7 @@ local function startDash()
             return
         end
 
-        -- Update direction live every frame
-        lv.VectorVelocity = getDashDirection() * DASH_FORCE
+        lv.VectorVelocity = getCurrentDir() * DASH_FORCE
     end)
 end
 

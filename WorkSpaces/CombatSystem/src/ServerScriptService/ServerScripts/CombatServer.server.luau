@@ -114,7 +114,7 @@ mainEvent.OnServerEvent:Connect(function(player, lastHit)
             blockHitSound:Play()
         else
             if lastHit then
-                bodyVelocity.VectorVelocity = humanoidRootPart.CFrame.LookVector * 30
+                bodyVelocity.VectorVelocity = humanoidRootPart.CFrame.LookVector * 50
             else
                 bodyVelocity.VectorVelocity = humanoidRootPart.CFrame.LookVector * 1
             end
