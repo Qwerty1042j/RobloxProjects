@@ -1,0 +1,16 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\src",
+    "\\src\\ReplicatedStorage",
+    "\\src\\ServerScriptService",
+    "\\src\\ServerScriptService\\Data",
+    "\\src\\ServerScriptService\\Libraries",
+    "\\src\\ServerScriptService\\ServerScripts",
+    "\\src\\StarterPlayer",
+    "\\src\\StarterPlayer\\StarterCharacterScripts",
+    "\\src\\StarterPlayer\\StarterPlayerScripts"
+  ],
+  "SelectedNode": "\\src\\StarterPlayer\\StarterPlayerScripts\\CombatClient.client.luau",
+  "PreviewInSolutionExplorer": false
+}
